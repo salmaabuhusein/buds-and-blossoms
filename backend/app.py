@@ -1,5 +1,6 @@
 """FastAPI search service.  Run:  .venv/bin/uvicorn backend.app:app --reload --port 8000"""
 import sys
+from collections import Counter
 from pathlib import Path
 from typing import List, Optional
 
@@ -16,7 +17,8 @@ index = PlantIndex()
 
 @app.get("/api/stats")
 def stats():
-    return {"records": len(index.docs), "sources": len({d["source"] for d in index.docs})}
+    by_source = Counter(d["source"] for d in index.docs)
+    return {"records": len(index.docs), "sources": len(by_source), "by_source": by_source}
 
 
 @app.get("/api/search")

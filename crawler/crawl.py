@@ -8,7 +8,7 @@ Sources:
 Usage: python crawler/crawl.py [--per-source 200] [--delay 1.0] [--only mbg,ncsu,wf]
 Raw HTML is cached in data/raw/ so re-runs don't re-download.
 """
-import argparse, hashlib, json, os, re, sys, time
+import argparse, hashlib, json, re, sys, time
 import urllib.robotparser
 from pathlib import Path
 from urllib.parse import urlparse

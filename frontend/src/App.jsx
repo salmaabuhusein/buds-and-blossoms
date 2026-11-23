@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 const COLORS = ["White", "Yellow", "Orange", "Red", "Pink", "Purple", "Blue", "Green"];
 const SEASONS = ["Spring", "Summer", "Autumn", "Winter"];
@@ -205,36 +205,44 @@ function ResultsGrid({ results }) {
   );
 }
 
-function About({ stats, facets }) {
+function AboutDialog({ dialogRef, stats }) {
+  const close = () => dialogRef.current.close();
   return (
-    <main className="about">
-            <h2>Where these records come from</h2>
-      <p>
-        {stats.records} flowering-plant records were crawled from {stats.sources} public plant databases, normalised to one
-        schema (flower colour, bloom season, sun exposure, USDA zone, plant type) and indexed with BM25.
-      </p>
-      <ul>
-        {Object.entries(facets?.source || {}).map(([s, n]) => <li key={s}><strong>{s}</strong> — {n} records</li>)}
-      </ul>
-    </main>
+    <dialog className="about" ref={dialogRef} aria-labelledby="about-title" onClick={(e) => { if (e.target === e.currentTarget) close(); }}>
+      <div className="about-body">
+        <button className="about-close" aria-label="Close" onClick={close}><Cross /></button>
+        <h2 id="about-title">Where these records come from</h2>
+        {stats ? (
+          <>
+            <p>
+              {stats.records} plant records were crawled from {stats.sources} public plant databases, normalised to one
+              schema (flower colour, bloom season, sun exposure, USDA zone, plant type) and indexed with BM25.
+            </p>
+            <ul>
+              {Object.entries(stats.by_source).map(([s, n]) => <li key={s}><span>{s}</span><span className="count">{n} records</span></li>)}
+            </ul>
+          </>
+        ) : <p>Record counts couldn’t be loaded.</p>}
+      </div>
+    </dialog>
   );
 }
 
 export default function App() {
-  const [tab, setTab] = useState("explore");
+  const about = useRef(null);
   const [input, setInput] = useState("");
   const [query, setQuery] = useState("");
   const [filters, setFilters] = useState(EMPTY);
   const [sort, setSort] = useState("name");
   const [view, setView] = useState("list");
   const [data, setData] = useState({ total: 0, results: [], facets: null });
-  const [stats, setStats] = useState({ records: 0, sources: 0 });
+  const [stats, setStats] = useState(null);
   const [feedback, setFeedback] = useState({});
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(false);
   const [retry, setRetry] = useState(0);
 
-  useEffect(() => { fetch("/api/stats").then((r) => r.json()).then(setStats).catch(() => {}); }, []);
+  useEffect(() => { fetch("/api/stats").then((r) => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json(); }).then(setStats).catch(() => {}); }, []);
   useEffect(() => {
     let current = true; // ignore responses to requests that have been superseded
     setLoading(true);
@@ -248,7 +256,7 @@ export default function App() {
 
   // with a query, default to relevance; without one, relevance means nothing, so default to A–Z
   const submit = (q) => {
-    setInput(q); setQuery(q.trim()); setFeedback({}); setTab("explore");
+    setInput(q); setQuery(q.trim()); setFeedback({});
     setSort(q.trim() ? "relevance" : "name");
   };
   const subtitle = sort === "zone" ? "By hardiness zone, hardiest first" : sort === "name" || !query ? "A to Z by common name" : `Best matches for “${query}”`;
@@ -257,64 +265,61 @@ export default function App() {
     <>
       <header className="topbar">
         <button className="brand" onClick={() => { submit(""); setFilters(EMPTY); }}><Logo /><span>Buds &amp; <b>Blossoms</b></span></button>
-        <nav>
-          <button className={tab === "explore" ? "active" : ""} onClick={() => setTab("explore")}>Plants</button>
-          <button className={tab === "about" ? "active" : ""} onClick={() => setTab("about")}>About the data</button>
-        </nav>
       </header>
 
-      {tab === "about" ? <About stats={stats} facets={data.facets} /> : (
-        <>
-          <section className="hero">
-            <h1>Find the flower <em>you’re looking for.</em></h1>
+      <section className="hero">
+        <h1>Find the flower <em>you’re looking for.</em></h1>
         <form className="searchbar" onSubmit={(e) => { e.preventDefault(); submit(input); }}>
-          <input aria-label="Search plants" value={input} onChange={(e) => setInput(e.target.value)} placeholder="Name, Latin name, colour, season…" />
-          <button type="submit">Search</button>
-        </form>
-          <div className="try">
-            <span>For example</span>
-            {EXAMPLES.map((ex) => <button key={ex} onClick={() => submit(ex)}>{ex}</button>)}
-          </div>
-          </section>
-          <div className="layout">
-            <Sidebar facets={data.facets} filters={filters} setFilters={setFilters} />
-            <main className="results">
-              <div className="res-head">
-                <div>
-                  <h2>{error ? "Search unavailable" : `${data.total} plants`}</h2>
-                  <p className="sub">{loading ? "Searching…" : error ? "" : subtitle}</p>
-                </div>
-                <div className="controls">
-                  <span className="muted">Sort</span>
-                  <div className="select sm">
-                    <select value={sort} onChange={(e) => setSort(e.target.value)}>
-                      <option value="relevance" disabled={!query}>Relevance{query ? "" : " (search first)"}</option>
-                      <option value="name">Name (A–Z)</option>
-                      <option value="zone">Hardiness zone</option>
-                    </select>
-                    <Chevron />
-                  </div>
-                  <div className="toggle">
-                    <button className={view === "list" ? "on" : ""} onClick={() => setView("list")} title="Table view"><ListIcon /></button>
-                    <button className={view === "grid" ? "on" : ""} onClick={() => setView("grid")} title="Grid view"><GridIcon /></button>
-                  </div>
-                </div>
+      <input aria-label="Search plants" value={input} onChange={(e) => setInput(e.target.value)} placeholder="Name, Latin name, colour, season…" />
+      <button type="submit">Search</button>
+    </form>
+      <div className="try">
+        <span>For example</span>
+        {EXAMPLES.map((ex) => <button key={ex} onClick={() => submit(ex)}>{ex}</button>)}
+      </div>
+      </section>
+      <div className="layout">
+        <Sidebar facets={data.facets} filters={filters} setFilters={setFilters} />
+        <main className="results">
+          <div className="res-head">
+            <div>
+              <h2>{error ? "Search unavailable" : `${data.total} plants`}</h2>
+              <p className="sub">{loading ? "Searching…" : error ? "" : subtitle}</p>
+            </div>
+            <div className="controls">
+              <span className="muted">Sort</span>
+              <div className="select sm">
+                <select value={sort} onChange={(e) => setSort(e.target.value)}>
+                  <option value="relevance" disabled={!query}>Relevance{query ? "" : " (search first)"}</option>
+                  <option value="name">Name (A–Z)</option>
+                  <option value="zone">Hardiness zone</option>
+                </select>
+                <Chevron />
               </div>
-              {error ? (
-                <div className="empty" role="alert">
-                  The search service didn’t respond properly. <button className="link" onClick={() => setRetry((n) => n + 1)}>Try again</button>
-                </div>
-              ) : data.total === 0 && !loading ? (
-                <div className="empty">No plants match. Try removing a filter or using a broader term.</div>
-              ) : view === "list" ? (
-                <ResultsTable results={data.results} feedback={feedback} setFeedback={setFeedback} />
-              ) : (
-                <ResultsGrid results={data.results} />
-              )}
-            </main>
+              <div className="toggle">
+                <button className={view === "list" ? "on" : ""} onClick={() => setView("list")} title="Table view"><ListIcon /></button>
+                <button className={view === "grid" ? "on" : ""} onClick={() => setView("grid")} title="Grid view"><GridIcon /></button>
+              </div>
+            </div>
           </div>
-        </>
-      )}
+          {error ? (
+            <div className="empty" role="alert">
+              The search service didn’t respond properly. <button className="link" onClick={() => setRetry((n) => n + 1)}>Try again</button>
+            </div>
+          ) : data.total === 0 && !loading ? (
+            <div className="empty">No plants match. Try removing a filter or using a broader term.</div>
+          ) : view === "list" ? (
+            <ResultsTable results={data.results} feedback={feedback} setFeedback={setFeedback} />
+          ) : (
+            <ResultsGrid results={data.results} />
+          )}
+        </main>
+      </div>
+
+      <footer className="footer">
+        <button className="link" aria-haspopup="dialog" onClick={() => about.current.showModal()}>About the data</button>
+      </footer>
+      <AboutDialog dialogRef={about} stats={stats} />
     </>
   );
 }

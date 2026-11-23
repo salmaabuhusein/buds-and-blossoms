@@ -111,19 +111,17 @@ def normalize(r):
     name = r["name"].strip()
     if name.islower():
         name = " ".join(w[:1].upper() + w[1:] for w in name.split())  # str.title() breaks "monk's"
-    colors_l = norm_colors(r.get("color_raw")) or norm_colors(r.get("extra_text", "")[:300])
-    seasons_l = norm_seasons(r.get("season_raw"))
-    sun_l = norm_sun(r.get("sun_raw"))
+    seasons = norm_seasons(r.get("season_raw"))
+    sun = norm_sun(r.get("sun_raw"))
     desc = (r.get("description") or "").strip() or (r.get("extra_text") or "").strip()
     if not desc:  # last resort: a readable summary built from the structured fields
         art = "An" if ptype[0].lower() in "aeiou" else "A"
         bits = [f"{art} {ptype.lower()} in the {r.get('family') or 'unknown'} family"]
-        if colors_l:
-            bits.append(f"with {' and '.join(c.lower() for c in colors_l)} flowers")
-        if seasons_l:
-            bits.append(f"blooming in {' and '.join(s.lower() for s in seasons_l)}")
-        desc = " ".join(bits) + (f". Prefers {', '.join(s.lower() for s in sun_l)}." if sun_l else ".")
-    r = {**r, "description": desc}
+        if colors:
+            bits.append(f"with {' and '.join(c.lower() for c in colors)} flowers")
+        if seasons:
+            bits.append(f"blooming in {' and '.join(s.lower() for s in seasons)}")
+        desc = " ".join(bits) + (f". Prefers {', '.join(s.lower() for s in sun)}." if sun else ".")
     return {
         "name": name,
         "scientific_name": r["scientific_name"],
@@ -132,11 +130,11 @@ def normalize(r):
         "image": r.get("image", ""),
         "family": r.get("family", ""),
         "type": ptype,
-        "description": r.get("description", ""),
+        "description": desc,
         "extra_text": r.get("extra_text", ""),
         "colors": colors,
-        "seasons": norm_seasons(r.get("season_raw")),
-        "sun": norm_sun(r.get("sun_raw")),
+        "seasons": seasons,
+        "sun": sun,
         "zone_min": zmin,
         "zone_max": zmax,
     }
