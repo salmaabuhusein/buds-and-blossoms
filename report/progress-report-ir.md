@@ -1,11 +1,10 @@
 # Buds & Blossoms: Progress Report
-Information Retrieval, Project 13: Plants and Flowers 
-Jana Srbakoska, Salma Abu Husein 
-24 November 2026
+Information Retrieval, Project 13: Plants and Flowers. 
+Jana Srbakoska, Salma Abu Husein
 
 ## Goal and collection
-Buds & Blossoms supports specific and vague plant searches, e.g. "something pink for winter" We crawled 600 records, 200 from each of the following: the Missouri Botanical Garden Plant Finder (A–Z lists), NC State Extension Plant Toolbox (sitemap) and Lady Bird Johnson Wildflower Center (family search). Garden.org and Gardenia.net both rejected automated requests (HTTP 403). 
-The crawler checks robots.txt, waits 1 second between requests and caches pages. Site specific parsers normalise attributes/vocabularies onto a shared JSON Lines schema e.g. "dappled sunlight" becomes partial shade.
+Buds & Blossoms supports specific and vague plant searches, e.g. "something pink for winter". We crawled 600 records, 200 from each of the following: the Missouri Botanical Garden Plant Finder (A–Z lists), NC State Extension Plant Toolbox (sitemap) and Lady Bird Johnson Wildflower Center (family search). Garden.org and Gardenia.net both rejected automated requests (HTTP 403). 
+The crawler checks robots.txt, waits 1 second between requests and caches pages. Site specific parsers normalise attributes/vocabularies onto a shared schema e.g. "dappled sunlight" becomes partial shade.
 
 
 ## Current implementation
@@ -26,13 +25,8 @@ Excluding generic terms reduces “winter flowers” matches from 572 to 237. �
 
 
 ## How we will improve and expand
-Implement Rocchio-style positive-feedback query expansion using BM25-weighted vectors and exclude negatively marked results. 
-Build an inverted index with explicit field weights and revised IDF (log((M+1)/df)); prioritise matches covering more query terms and compare stronger stemmers. 
-Expand and balance the collection, deduplicate cross-source plants, label generated descriptions, and add pagination, visible expansion terms/reset and missing-data notices. 
-After a pilot, three of our classmates will test feedback off vs. on; we will record time, number of queries, plants found and SUS responses. 
+- We will implement Rocchio-style positive-feedback query expansion using BM25-weighted vectors and exclude negatively marked results. 
+- We will build an inverted index with explicit field weights and revised IDF (log((M+1)/df)); prioritise matches covering more query terms and compare stronger stemmers. 
+- We will expand and balance the collection, deduplicate cross-source plants, label generated descriptions, and add pagination, visible expansion terms/reset and missing-data notices. 
+- After a pilot, three of our classmates will test feedback off vs. on; we will record time, number of queries, plants found and SUS responses. 
 
-## Appendix
-project reporsitory :
-These materials are provided to enable independent examination of the results and reproduction of the reported analyses.
-
-materials :
