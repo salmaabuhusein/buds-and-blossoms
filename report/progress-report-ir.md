@@ -1,19 +1,19 @@
 # Buds & Blossoms: Progress Report
-Information Retrieval, Project 13: Plants and Flowers. 
+Information Retrieval, Project 13: Plants and Flowers
 Jana Srbakoska, Salma Abu Husein
 
 ## Goal and collection
 Buds & Blossoms supports specific and vague plant searches, e.g. "something pink for winter". We crawled 600 records, 200 from each of the following: the Missouri Botanical Garden Plant Finder (A–Z lists), NC State Extension Plant Toolbox (sitemap) and Lady Bird Johnson Wildflower Center (family search). Garden.org and Gardenia.net both rejected automated requests (HTTP 403). 
-The crawler checks robots.txt, waits 1 second between requests and caches pages. Site specific parsers normalise attributes/vocabularies onto a shared schema e.g. "dappled sunlight" becomes partial shade.
+The crawler checks robots.txt, waits 1 second between requests and caches pages. Site-specific parsers normalise attributes/vocabularies onto a shared schema, e.g. "dappled sunlight" becomes partial shade.
 
 
 ## Current implementation
 | IR process | Implementation |
 |---|---|
-| Acquisition/ Indexing | Site-specific crawling and normalisation; lower-casing, stop-word removal and basic plural stemming. A bag-of-words representation boosts names and attributes by repetition |
-| Query processing/ Retrieval | Matching preprocessing; removal of generic terms (“flower”, “plant”) when other terms remain; fall/autumn expansion. BM25 ranking (`rank_bm25`, k1 = 1.5, b = 0.75) with Boolean filters. |
+| Acquisition/Indexing | Site-specific crawling and normalisation; lower-casing, stop-word removal and basic plural stemming. A bag-of-words representation boosts names and attributes by repetition. |
+| Query processing/Retrieval | Matching preprocessing; removal of generic terms (“flower”, “plant”) when other terms remain; fall/autumn expansion. BM25 ranking (`rank_bm25`, k1 = 1.5, b = 0.75) with Boolean filters. |
 | UI (simple features) | React table/grid, six attribute filters, sorting and query-highlighted snippets. FastAPI serves results from an in-memory BM25 representation. |
-| Relevance feedback (complex feature) | ✓/✗ buttons in the table; they do not change the ranking yet |
+| Relevance feedback (complex feature) | ✓/✗ buttons in the table; they do not change the ranking yet. |
 
 Architecture: Data acquisition and indexing: requests, BeautifulSoup, JSON Lines, in-memory BM25 index. Backend and interface: FastAPI, React.
 
