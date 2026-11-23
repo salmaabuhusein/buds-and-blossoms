@@ -12,7 +12,26 @@ DATA = ROOT / "data" / "plants.jsonl"
 
 STOP = set("""a an and are as at be by for from has have in is it its of on or that the this to was were
 which with will can may also into their they these those very often""".split())
+# words describing nearly every record: dropped from a query when more specific words remain
+GENERIC = {"flower", "flowering", "bloom", "blooming", "plant"}
+SYNONYMS = {"fall": ["autumn"], "autumn": ["fall"]}  # season label vs. wording in descriptions
 FACETS = {"colors": "colors", "seasons": "seasons", "sun": "sun", "type": "type", "source": "source"}
+
+
+IRREGULAR = {"leaves": "leaf", "irises": "iris", "cacti": "cactus", "cactuses": "cactus", "crocuses": "crocus"}
+
+
+def singular(t):
+    """Light plural stemming (Harman's S-stemmer plus -es after ch/sh/ss/x/o)."""
+    if t in IRREGULAR:
+        return IRREGULAR[t]
+    if len(t) <= 3 or t.endswith(("ss", "us", "is")):
+        return t
+    if len(t) > 4 and t.endswith("ies"):
+        return t[:-3] + "y"
+    if len(t) > 4 and t.endswith(("ches", "shes", "sses", "xes", "oes")):
+        return t[:-2]
+    return t[:-1] if t.endswith("s") else t
 
 
 def tokenize(text):
@@ -21,13 +40,15 @@ def tokenize(text):
     for t in toks:
         if t in STOP:
             continue
-        # light stemming: plural / -ing forms
-        for suf in ("ies", "es", "s"):
-            if len(t) > 4 and t.endswith(suf) and not t.endswith("ss"):
-                t = t[: -len(suf)] + ("y" if suf == "ies" else "")
-                break
-        out.append(t)
+        out.append(singular(t))
     return out
+
+
+def query_terms(query):
+    """Query-time processing on top of tokenize(): drop generic words, then expand synonyms."""
+    toks = tokenize(query)
+    toks = [t for t in toks if t not in GENERIC] or toks
+    return list(dict.fromkeys(t for tok in toks for t in [tok] + SYNONYMS.get(tok, [])))
 
 
 def doc_text(r):
@@ -44,7 +65,7 @@ class PlantIndex:
 
     # ---------- retrieval ----------
     def score(self, query):
-        q = tokenize(query)
+        q = query_terms(query)
         if not q:
             return None
         return self.bm25.get_scores(q)
@@ -96,7 +117,7 @@ class PlantIndex:
             hits.sort(key=lambda i: (self.docs[i]["zone_min"] or 99, self.docs[i]["name"]))
         else:
             hits.sort(key=lambda i: -scores[i])
-        q = tokenize(query)
+        q = query_terms(query)
         results = []
         for i in hits:
             d = dict(self.docs[i])
@@ -111,8 +132,13 @@ class PlantIndex:
 def highlight(escaped_text, qtoks):
     if not qtoks:
         return escaped_text
-    pat = re.compile(r"\b(" + "|".join(re.escape(t) for t in qtoks) + r")[a-z]*", re.I)
-    return pat.sub(lambda m: f"<mark>{m.group(0)}</mark>", escaped_text)
+    terms = set(qtoks)
+
+    def mark(m):
+        w = m.group(0)  # HTML entities such as &quot; are matched whole and left alone
+        return f"<mark>{w}</mark>" if w[0] != "&" and singular(w.lower()) in terms else w
+
+    return re.sub(r"&#?\w+;|[A-Za-z0-9]+", mark, escaped_text)
 
 
 def snippet(text, qtoks, max_chars=230):

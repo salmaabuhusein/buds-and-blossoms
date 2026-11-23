@@ -3,14 +3,14 @@ import re
 
 COLORS = ["White", "Yellow", "Orange", "Red", "Pink", "Purple", "Blue", "Green"]
 COLOR_WORDS = {
-    "White": ["white", "cream", "ivory"],
-    "Yellow": ["yellow", "gold", "golden"],
-    "Orange": ["orange", "apricot", "salmon", "peach"],
-    "Red": ["red", "scarlet", "crimson", "burgundy", "maroon"],
-    "Pink": ["pink", "rose", "magenta", "fuchsia"],
-    "Purple": ["purple", "violet", "lavender", "lilac", "mauve", "plum"],
-    "Blue": ["blue"],
-    "Green": ["green", "chartreuse"],
+    "White": ["white", "whitish", "cream", "creamy", "ivory"],
+    "Yellow": ["yellow", "yellowish", "gold", "golden"],
+    "Orange": ["orange", "orangish", "apricot", "salmon", "peach"],
+    "Red": ["red", "reddish", "scarlet", "crimson", "burgundy", "maroon"],
+    "Pink": ["pink", "pinkish", "rose", "rosy", "magenta", "fuchsia"],
+    "Purple": ["purple", "purplish", "violet", "lavender", "lilac", "mauve", "plum"],
+    "Blue": ["blue", "bluish"],
+    "Green": ["green", "greenish", "chartreuse"],
 }
 SEASONS = ["Spring", "Summer", "Autumn", "Winter"]
 MONTH_SEASON = {
@@ -19,17 +19,24 @@ MONTH_SEASON = {
     "nov": "Autumn", "dec": "Winter",
 }
 MONTHS = ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"]
+SEASON_MONTHS = {"spring": [2, 3, 4], "summer": [5, 6, 7], "fall": [8, 9, 10], "autumn": [8, 9, 10],
+                 "winter": [11, 0, 1]}
+_MONTH = (r"jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|june?|july?|aug(?:ust)?|"
+          r"sept?(?:ember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?")
+_SEASON = "|".join(SEASON_MONTHS)
+_WHEN = rf"(?:(early|mid|late)[ -]+)?\b({_MONTH}|{_SEASON})\b"
+RANGE = re.compile(rf"{_WHEN}\s*(?:to|through|-|–)\s*{_WHEN}")
 TYPES = [  # (label, keywords) — first match wins
     ("Orchid", ["orchid"]),
     ("Succulent", ["succulent", "cactus", "cacti"]),
     ("Bulb", ["bulb", "corm", "tuber"]),
     ("Vine", ["vine", "climber", "climbing"]),
     ("Tree", ["tree"]),
-    ("Shrub", ["shrub", "subshrub", "evergreen", "deciduous"]),
+    ("Shrub", ["shrub", "subshrub", "broadleaf evergreen", "needled evergreen"]),
     ("Grass", ["grass", "sedge", "rush"]),
     ("Fern", ["fern"]),
     ("Annual", ["annual", "biennial"]),
-    ("Herbaceous perennial", ["perennial", "herb", "forb", "wildflower"]),
+    ("Herbaceous perennial", ["perennial", "herb", "herbaceous", "forb", "wildflower"]),
 ]
 
 
@@ -39,25 +46,27 @@ def words(s):
 
 def norm_colors(raw):
     t = words(raw)
-    return [c for c in COLORS if any(re.search(rf"\b{w}", t) for w in COLOR_WORDS[c])]
+    return [c for c in COLORS if any(re.search(rf"\b{w}s?\b", t) for w in COLOR_WORDS[c])]
+
+
+def _months(word, qualifier=""):
+    """Month indices covered by a month or season name; "early"/"mid"/"late" pick one month of a season."""
+    key = word[:3]
+    if key in MONTHS:
+        return [MONTHS.index(key)]
+    months = SEASON_MONTHS[word]
+    q = (qualifier or "").strip(" -")
+    return [months[("early", "mid", "late").index(q)]] if q else months
 
 
 def norm_seasons(raw):
     t = words(raw)
-    out = set()
-    for s in SEASONS:
-        if s.lower() in t:
-            out.add(s)
-    if "fall" in t:
-        out.add("Autumn")
-    # month ranges: "May to July" / "Jun, Jul, Aug"
-    found = [m for m in MONTHS if re.search(rf"\b{m}", t)]
-    rng = re.search(r"\b(" + "|".join(MONTHS) + r")[a-z]*\s+(?:to|-|–)\s+(" + "|".join(MONTHS) + r")", t)
-    if rng:
-        a, b = MONTHS.index(rng.group(1)), MONTHS.index(rng.group(2))
-        idx = range(a, b + 1) if a <= b else list(range(a, 12)) + list(range(0, b + 1))
-        found += [MONTHS[i] for i in idx]
-    out |= {MONTH_SEASON[m] for m in found}
+    out = {"Autumn" if s == "fall" else s.capitalize() for s in re.findall(rf"\b(?:{_SEASON})\b", t)}
+    out |= {MONTH_SEASON[m[:3]] for m in re.findall(rf"\b(?:{_MONTH})\b", t)}
+    # ranges of months and/or seasons, wrapping around the year: "May to July", "Late Fall to May"
+    for q1, w1, q2, w2 in RANGE.findall(t):
+        a, b = _months(w1, q1)[0], _months(w2, q2)[-1]
+        out |= {MONTH_SEASON[MONTHS[(a + i) % 12]] for i in range((b - a) % 12 + 1)}
     return [s for s in SEASONS if s in out]
 
 
@@ -68,7 +77,8 @@ def norm_sun(raw):
         out.add("Full sun")
     if re.search(r"part|dappled|filtered|2-6 hours|semi", t):
         out.add("Partial shade")
-    if re.search(r"full shade|deep shade|\bshade\b(?! through)|less than 2 hours", t) and "part" not in t:
+    no_part = re.sub(r"(?:part(?:ial)?|semi)[ -]shade", "", t)  # "Part Shade, Shade" lists both
+    if re.search(r"full shade|deep shade|\bshade\b(?! through)|less than 2 hours", no_part):
         out.add("Full shade")
     if "sun to part shade" in t or "sun to shade" in t:
         out |= {"Full sun", "Partial shade"}
@@ -85,7 +95,7 @@ def norm_zones(raw):
 def norm_type(raw):
     t = words(raw)
     for label, kws in TYPES:
-        if any(k in t for k in kws):
+        if any(re.search(rf"\b{k}(?:s|es)?\b", t) for k in kws):
             return label
     return "Other"
 

@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 
 const COLORS = ["White", "Yellow", "Orange", "Red", "Pink", "Purple", "Blue", "Green"];
 const SEASONS = ["Spring", "Summer", "Autumn", "Winter"];
@@ -26,10 +26,8 @@ function buildQuery(q, f, sort) {
 
 /* ---------- icons ---------- */
 const Logo = () => (
-  <svg width="40" height="40" viewBox="0 0 40 40" aria-hidden>
-    {[0, 90, 180, 270].map((r) => (
-      <ellipse key={r} cx="20" cy="10.5" rx="7" ry="9.5" fill="#8e4a6e" transform={`rotate(${r} 20 20)`} />
-    ))}
+  <svg width="36" height="36" viewBox="0 0 40 40" aria-hidden="true">
+    {[0, 90, 180, 270].map((r) => <ellipse key={r} cx="20" cy="10.5" rx="7" ry="9.5" fill="#8e4a6e" transform={`rotate(${r + 12} 20 20)`} />)}
     <circle cx="20" cy="20" r="4.2" fill="#f6eef1" />
   </svg>
 );
@@ -38,16 +36,6 @@ const Leaf = ({ color }) => (
     <path d="M20 4c-8 0-14 4.5-14 11 0 2 .6 3.6 1.6 5" />
     <path d="M20 4c0 9-4.5 15-11 15-1 0-2-.2-2.8-.5" />
     <path d="M4 21c3.5-5 7-8.5 12-12" />
-  </svg>
-);
-const SearchIcon = () => (
-  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#8a8a85" strokeWidth="1.8" strokeLinecap="round">
-    <circle cx="11" cy="11" r="7" /><path d="m20 20-3.5-3.5" />
-  </svg>
-);
-const FilterIcon = () => (
-  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-    <path d="M3 6h18M7 12h10M10 18h4" />
   </svg>
 );
 const Chevron = () => (
@@ -108,12 +96,12 @@ function Sidebar({ facets, filters, setFilters }) {
   return (
     <aside className="sidebar">
       <div className="side-head">
-        <span className="side-title"><FilterIcon /> Refine results</span>
+        <h3>Filter</h3>
         <button className="link" onClick={() => setFilters(EMPTY)}>Clear all</button>
       </div>
 
       <section>
-        <h4>Flower color</h4>
+        <h4>Flower colour</h4>
         <div className="grid2">
           {COLORS.map((c) => (
             <CheckRow key={c} label={c} dot count={f.colors?.[c]} checked={filters.colors.includes(c)} onChange={() => toggle("colors", c)} />
@@ -160,10 +148,7 @@ function Sidebar({ facets, filters, setFilters }) {
           <CheckRow key={s} label={s} count={f.source[s]} checked={filters.source.includes(s)} onChange={() => toggle("source", s)} />
         ))}
       </section>
-      <div className="tip">
-        <div className="tip-title"><Leaf color="#5f7d48" /> Search tip</div>
-        <p>Combine words like a colour, a season and a condition — e.g. <em>“yellow summer full sun”</em> — then narrow down with the filters.</p>
-      </div>
+      <div className="vine" aria-hidden="true" />
     </aside>
   );
 }
@@ -194,8 +179,8 @@ function ResultsTable({ results, feedback, setFeedback }) {
           <div className="small muted">{r.score ?? "—"}</div>
           <div className="right">
             <div className="fb">
-              <button className={feedback[r.id] === 1 ? "on yes" : ""} title="Relevant" onClick={() => mark(r.id, 1)}><Check /></button>
-              <button className={feedback[r.id] === -1 ? "on no" : ""} title="Not relevant" onClick={() => mark(r.id, -1)}><Cross /></button>
+              <button className={feedback[r.id] === 1 ? "on yes" : ""} title="Relevant" aria-label="Relevant" aria-pressed={feedback[r.id] === 1} onClick={() => mark(r.id, 1)}><Check /></button>
+              <button className={feedback[r.id] === -1 ? "on no" : ""} title="Not relevant" aria-label="Not relevant" aria-pressed={feedback[r.id] === -1} onClick={() => mark(r.id, -1)}><Cross /></button>
             </div>
           </div>
         </div>
@@ -213,7 +198,7 @@ function ResultsGrid({ results }) {
           <div className="pname" dangerouslySetInnerHTML={{ __html: r.name_html }} />
           <div className="sci"><em>{r.scientific_name}</em></div>
           <p className="snippet" dangerouslySetInnerHTML={{ __html: r.snippet }} />
-          <div className="small"><Dots colors={r.colors} />{r.seasons.join(", ")} · {r.sun.join(", ")}</div>
+          <div className="small"><Dots colors={r.colors} />{[r.seasons.join(", "), r.sun.join(", ")].filter(Boolean).join(" · ")}</div>
         </a>
       ))}
     </div>
@@ -223,8 +208,7 @@ function ResultsGrid({ results }) {
 function About({ stats, facets }) {
   return (
     <main className="about">
-      <p className="eyebrow">About the data</p>
-      <h2>Where these records come from</h2>
+            <h2>Where these records come from</h2>
       <p>
         {stats.records} flowering-plant records were crawled from {stats.sources} public plant databases, normalised to one
         schema (flower colour, bloom season, sun exposure, USDA zone, plant type) and indexed with BM25.
@@ -247,77 +231,61 @@ export default function App() {
   const [stats, setStats] = useState({ records: 0, sources: 0 });
   const [feedback, setFeedback] = useState({});
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(false);
+  const [retry, setRetry] = useState(0);
 
   useEffect(() => { fetch("/api/stats").then((r) => r.json()).then(setStats).catch(() => {}); }, []);
   useEffect(() => {
+    let current = true; // ignore responses to requests that have been superseded
     setLoading(true);
     fetch("/api/search?" + buildQuery(query, filters, sort))
-      .then((r) => r.json())
-      .then(setData)
-      .catch(() => setData({ total: 0, results: [], facets: null }))
-      .finally(() => setLoading(false));
-  }, [query, filters, sort]);
+      .then((r) => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json(); })
+      .then((d) => { if (current) { setData(d); setError(false); } })
+      .catch(() => { if (current) setError(true); })
+      .finally(() => { if (current) setLoading(false); });
+    return () => { current = false; };
+  }, [query, filters, sort, retry]);
 
   // with a query, default to relevance; without one, relevance means nothing, so default to A–Z
   const submit = (q) => {
     setInput(q); setQuery(q.trim()); setFeedback({}); setTab("explore");
     setSort(q.trim() ? "relevance" : "name");
   };
-  const SORT_TEXT = { relevance: `Ranked by relevance to “${query}”. Mark records to refine the ranking.`,
-    name: "Sorted alphabetically by common name.", zone: "Sorted by hardiness zone, coldest-tolerant first." };
-  const subtitle = useMemo(
-    () => (sort === "relevance" && !query ? SORT_TEXT.name : SORT_TEXT[sort]) + (query ? "" : " Search to rank by relevance."),
-    [query, sort]
-  );
+  const subtitle = sort === "zone" ? "By hardiness zone, hardiest first" : sort === "name" || !query ? "A to Z by common name" : `Best matches for “${query}”`;
 
   return (
     <>
       <header className="topbar">
-        <div className="brand" onClick={() => { submit(""); setFilters(EMPTY); }}>
-          <Logo />
-          <div>
-            <div className="wordmark">Buds <span className="amp">&amp;</span> <span className="plum">Blossoms</span></div>
-            <div className="tag">Botanical search</div>
-          </div>
-        </div>
+        <button className="brand" onClick={() => { submit(""); setFilters(EMPTY); }}><Logo /><span>Buds &amp; <b>Blossoms</b></span></button>
         <nav>
-          <button className={tab === "explore" ? "active" : ""} onClick={() => setTab("explore")}>Explore plants</button>
+          <button className={tab === "explore" ? "active" : ""} onClick={() => setTab("explore")}>Plants</button>
           <button className={tab === "about" ? "active" : ""} onClick={() => setTab("about")}>About the data</button>
         </nav>
-        <div className="pill">{stats.records} records · {stats.sources} sources</div>
       </header>
 
       {tab === "about" ? <About stats={stats} facets={data.facets} /> : (
         <>
           <section className="hero">
-            <p className="eyebrow"><span className="rule" />Discover the living world</p>
             <h1>Find the flower <em>you’re looking for.</em></h1>
-            <p className="lede">
-              Search plant records gathered from Missouri Botanical Garden, NC State and the Lady Bird Johnson Wildflower
-              Center by name, scientific name, color, season or growing conditions.
-            </p>
-            <form className="searchbar" onSubmit={(e) => { e.preventDefault(); submit(input); }}>
-              <SearchIcon />
-              <input value={input} onChange={(e) => setInput(e.target.value)} placeholder="Try “pink orchid”, “shade-loving perennial”…" />
-              <button type="submit">Search</button>
-            </form>
-            <div className="try">
-              <span>Try:</span>
-              {EXAMPLES.map((ex) => <button key={ex} className="chip" onClick={() => submit(ex)}>{ex}</button>)}
-            </div>
+        <form className="searchbar" onSubmit={(e) => { e.preventDefault(); submit(input); }}>
+          <input aria-label="Search plants" value={input} onChange={(e) => setInput(e.target.value)} placeholder="Name, Latin name, colour, season…" />
+          <button type="submit">Search</button>
+        </form>
+          <div className="try">
+            <span>For example</span>
+            {EXAMPLES.map((ex) => <button key={ex} onClick={() => submit(ex)}>{ex}</button>)}
+          </div>
           </section>
-
           <div className="layout">
             <Sidebar facets={data.facets} filters={filters} setFilters={setFilters} />
             <main className="results">
               <div className="res-head">
                 <div>
-                  <p className="eyebrow">Browse the collection</p>
-                  <h2>{data.total} plant records</h2>
-                  <p className="sub">{loading ? "Searching…" : subtitle}</p>
+                  <h2>{error ? "Search unavailable" : `${data.total} plants`}</h2>
+                  <p className="sub">{loading ? "Searching…" : error ? "" : subtitle}</p>
                 </div>
                 <div className="controls">
-                  <span className="muted">Sort by</span>
+                  <span className="muted">Sort</span>
                   <div className="select sm">
                     <select value={sort} onChange={(e) => setSort(e.target.value)}>
                       <option value="relevance" disabled={!query}>Relevance{query ? "" : " (search first)"}</option>
@@ -332,7 +300,11 @@ export default function App() {
                   </div>
                 </div>
               </div>
-              {data.total === 0 && !loading ? (
+              {error ? (
+                <div className="empty" role="alert">
+                  The search service didn’t respond properly. <button className="link" onClick={() => setRetry((n) => n + 1)}>Try again</button>
+                </div>
+              ) : data.total === 0 && !loading ? (
                 <div className="empty">No plants match. Try removing a filter or using a broader term.</div>
               ) : view === "list" ? (
                 <ResultsTable results={data.results} feedback={feedback} setFeedback={setFeedback} />

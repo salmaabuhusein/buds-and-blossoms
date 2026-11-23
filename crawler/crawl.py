@@ -154,18 +154,25 @@ def ncsu_parse(url, html):
     dl = {}
     for dt in s.select("dt"):
         k = clean(dt.get_text(" ")).rstrip(":")
-        dd = dt.find_next_sibling("dd")
-        if dd and k not in dl:
-            dl[k] = clean(dd.get_text(" "))
+        values = []  # multi-value fields have one <dd> per value
+        for el in dt.find_next_siblings():
+            if el.name != "dd":
+                break
+            values.append(clean(el.get_text(" ")))
+        if values and k not in dl:
+            dl[k] = ", ".join(values)
     if "Flower Color" not in dl:
         return None  # not a flowering plant entry
     sci = clean(s.h1.get_text(" ")).replace("Play pronunciation", "").strip() if s.h1 else ""
     first = s.select_one("#common_names li")
     common = clean(first.get_text(" ")) if first else ""
     # first full-size plant photo (thumb_sm ones are "related plants"); drop the expiring S3 signature
-    # (must be an <img> with an image extension: the pronunciation audio lives under media/images/audio/)
-    img = re.search(r'<img[^>]+src="(https://eit-planttoolbox-prod\.s3\.amazonaws\.com/media/images/'
-                    r'(?!thumb|audio)[^"?]+\.(?:jpe?g|png|webp))', html, re.I)
+    # (must be an <img> with an image extension: the pronunciation audio lives under media/images/audio/,
+    # and partner logos sit among the photos under media/images/partner_logos/)
+    photo = (r'<img[^>]+src="(https://eit-planttoolbox-prod\.s3\.amazonaws\.com/media/images/'
+             r'(?!thumb|audio|partner_logos)[^"?]+\.(?:%s))["?]')
+    img = (re.search(photo % "jpe?g|png|webp", html, re.I)
+           or re.search(photo % "jpe|jfif", html, re.I))  # some pages only have these JPEG variants
     return {
         "source": "NC State Plant Toolbox", "url": url,
         "image": img.group(1) if img else "",
