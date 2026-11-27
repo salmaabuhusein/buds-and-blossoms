@@ -31,6 +31,10 @@ def search(
     source: List[str] = Query([]),
     zone: Optional[int] = None,
     sort: str = "relevance",
+    relevant: List[str] = Query([]),
+    rejected: List[str] = Query([]),
+    page: int = Query(1, ge=1),
+    page_size: int = Query(50, ge=1, le=200),
 ):
     filters = {"colors": colors, "seasons": seasons, "sun": sun, "type": type, "source": source, "zone": zone}
-    return index.search(q, filters, sort)
+    return index.search(q, filters, sort, relevant, rejected, page, page_size)

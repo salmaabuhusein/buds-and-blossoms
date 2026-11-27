@@ -15,13 +15,35 @@ const TINT = {
 const EXAMPLES = ["pink orchid", "shade woodland perennial", "fragrant climbing vine", "winter flowers"];
 const EMPTY = { colors: [], seasons: [], sun: [], type: [], source: [], zone: "" };
 
-function buildQuery(q, f, sort) {
+const NO_FEEDBACK = { relevant: [], rejected: [] };
+// evaluation baseline: open the page with ?feedback=off
+const FEEDBACK_ON = new URLSearchParams(window.location.search).get("feedback") !== "off";
+
+const PAGE_SIZE = 48; // fills 2, 3, 4 or 6 grid columns evenly
+
+function buildQuery(q, f, sort, fb, page) {
   const p = new URLSearchParams();
   if (q) p.set("q", q);
   for (const k of ["colors", "seasons", "sun", "type", "source"]) f[k].forEach((v) => p.append(k, v));
   if (f.zone) p.set("zone", f.zone);
   p.set("sort", sort);
+  for (const k of ["relevant", "rejected"]) fb[k].forEach((id) => p.append(k, id));
+  p.set("page", page);
+  p.set("page_size", PAGE_SIZE);
   return p.toString();
+}
+
+// 1 … 4 5 6 … 31: first, last and the pages around the current one; null marks a gap
+function pageList(page, pages) {
+  const keep = [...new Set([1, page - 1, page, page + 1, pages])].filter((n) => n >= 1 && n <= pages).sort((a, b) => a - b);
+  const out = [];
+  keep.forEach((n, i) => {
+    const prev = keep[i - 1] || 0;
+    if (n - prev === 2) out.push(prev + 1); // a gap of one page: show the page instead of "…"
+    else if (n - prev > 2) out.push(null);
+    out.push(n);
+  });
+  return out;
 }
 
 /* ---------- icons ---------- */
@@ -153,17 +175,43 @@ function Sidebar({ facets, filters, setFilters }) {
   );
 }
 
-function ResultsTable({ results, feedback, setFeedback }) {
-  const mark = (id, v) => setFeedback((fb) => ({ ...fb, [id]: fb[id] === v ? undefined : v }));
+function FeedbackButtons({ record, value, mark }) {
+  return (
+    <div className="fb">
+      <button className={value === 1 ? "on yes" : ""} title="Relevant" aria-label={`${record.name}: relevant`} aria-pressed={value === 1} onClick={() => mark(record.id, 1)}><Check /></button>
+      <button className={value === -1 ? "on no" : ""} title="Not relevant" aria-label={`${record.name}: not relevant`} aria-pressed={value === -1} onClick={() => mark(record.id, -1)}><Cross /></button>
+    </div>
+  );
+}
+
+function Pager({ page, pageSize, total, goTo }) {
+  const pages = pageSize ? Math.ceil(total / pageSize) : 0;
+  if (pages <= 1) return null;
+  const from = (page - 1) * pageSize + 1, to = Math.min(page * pageSize, total);
+  return (
+    <nav className="pager" aria-label="Result pages">
+      <span className="muted">{from}–{to} of {total}</span>
+      <div className="pages">
+        <button disabled={page === 1} onClick={() => goTo(page - 1)} aria-label="Previous page">‹</button>
+        {pageList(page, pages).map((n, i) => n === null
+          ? <span key={`gap${i}`} className="gap">…</span>
+          : <button key={n} className={n === page ? "on" : ""} aria-current={n === page ? "page" : undefined} onClick={() => goTo(n)}>{n}</button>)}
+        <button disabled={page === pages} onClick={() => goTo(page + 1)} aria-label="Next page">›</button>
+      </div>
+    </nav>
+  );
+}
+
+function ResultsTable({ results, offset, marks, mark }) {
   return (
     <div className="table">
       <div className="thead">
         <div>#</div><div>Plant record</div><div>Family · Type</div><div>Bloom</div>
-        <div>Light</div><div>Zones</div><div>Score</div><div className="right">Relevant?</div>
+        <div>Light</div><div>Zones</div><div>Score</div>{FEEDBACK_ON && <div className="right">Relevant?</div>}
       </div>
       {results.map((r, i) => (
         <div className="row" key={r.id}>
-          <div className="num">{i + 1}</div>
+          <div className="num">{offset + i + 1}</div>
           <div className="plant">
             <Thumb colors={r.colors} image={r.image} />
             <div>
@@ -177,29 +225,27 @@ function ResultsTable({ results, feedback, setFeedback }) {
           <div className="small">{r.sun.join(", ") || "—"}</div>
           <div className="small">{zones(r)}</div>
           <div className="small muted">{r.score ?? "—"}</div>
-          <div className="right">
-            <div className="fb">
-              <button className={feedback[r.id] === 1 ? "on yes" : ""} title="Relevant" aria-label="Relevant" aria-pressed={feedback[r.id] === 1} onClick={() => mark(r.id, 1)}><Check /></button>
-              <button className={feedback[r.id] === -1 ? "on no" : ""} title="Not relevant" aria-label="Not relevant" aria-pressed={feedback[r.id] === -1} onClick={() => mark(r.id, -1)}><Cross /></button>
-            </div>
-          </div>
+          {FEEDBACK_ON && <div className="right"><FeedbackButtons record={r} value={marks[r.id]} mark={mark} /></div>}
         </div>
       ))}
     </div>
   );
 }
 
-function ResultsGrid({ results }) {
+function ResultsGrid({ results, marks, mark }) {
   return (
     <div className="cards">
       {results.map((r) => (
-        <a className="card" key={r.id} href={r.url} target="_blank" rel="noreferrer">
-          <Thumb colors={r.colors} image={r.image} />
-          <div className="pname" dangerouslySetInnerHTML={{ __html: r.name_html }} />
-          <div className="sci"><em>{r.scientific_name}</em></div>
-          <p className="snippet" dangerouslySetInnerHTML={{ __html: r.snippet }} />
-          <div className="small"><Dots colors={r.colors} />{[r.seasons.join(", "), r.sun.join(", ")].filter(Boolean).join(" · ")}</div>
-        </a>
+        <div className="card" key={r.id}>
+          <a href={r.url} target="_blank" rel="noreferrer">
+            <Thumb colors={r.colors} image={r.image} />
+            <div className="pname" dangerouslySetInnerHTML={{ __html: r.name_html }} />
+            <div className="sci"><em>{r.scientific_name}</em></div>
+            <p className="snippet" dangerouslySetInnerHTML={{ __html: r.snippet }} />
+            <div className="small"><Dots colors={r.colors} />{[r.seasons.join(", "), r.sun.join(", ")].filter(Boolean).join(" · ")}</div>
+          </a>
+          {FEEDBACK_ON && <FeedbackButtons record={r} value={marks[r.id]} mark={mark} />}
+        </div>
       ))}
     </div>
   );
@@ -235,31 +281,60 @@ export default function App() {
   const [filters, setFilters] = useState(EMPTY);
   const [sort, setSort] = useState("name");
   const [view, setView] = useState("list");
-  const [data, setData] = useState({ total: 0, results: [], facets: null });
+  const [data, setData] = useState({ total: 0, page: 1, page_size: PAGE_SIZE, results: [], facets: null });
   const [stats, setStats] = useState(null);
-  const [feedback, setFeedback] = useState({});
-  const [loading, setLoading] = useState(false);
+  const [marks, setMarks] = useState({}); // ✓ = 1, ✗ = -1, not yet sent
+  const [applied, setApplied] = useState(NO_FEEDBACK); // feedback behind the current ranking
+  const [loading, setLoading] = useState(true); // the first search starts right away
   const [error, setError] = useState(false);
   const [retry, setRetry] = useState(0);
+  const resultsTop = useRef(null);
+  // the page belongs to one search: any new query, filter, sort or feedback starts again at page 1
+  const searchKey = JSON.stringify([query, filters, sort, applied]);
+  const [pageAt, setPageAt] = useState({ key: searchKey, page: 1 });
+  const page = pageAt.key === searchKey ? pageAt.page : 1;
+  const goTo = (n) => {
+    setPageAt({ key: searchKey, page: n });
+    resultsTop.current?.scrollIntoView({ block: "start" });
+  };
 
   useEffect(() => { fetch("/api/stats").then((r) => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json(); }).then(setStats).catch(() => {}); }, []);
   useEffect(() => {
     let current = true; // ignore responses to requests that have been superseded
     setLoading(true);
-    fetch("/api/search?" + buildQuery(query, filters, sort))
+    fetch("/api/search?" + buildQuery(query, filters, sort, applied, page))
       .then((r) => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json(); })
       .then((d) => { if (current) { setData(d); setError(false); } })
       .catch(() => { if (current) setError(true); })
       .finally(() => { if (current) setLoading(false); });
     return () => { current = false; };
-  }, [query, filters, sort, retry]);
+  }, [query, filters, sort, applied, page, retry]);
 
   // with a query, default to relevance; without one, relevance means nothing, so default to A–Z
   const submit = (q) => {
-    setInput(q); setQuery(q.trim()); setFeedback({});
+    setInput(q); setQuery(q.trim()); setMarks({}); setApplied(NO_FEEDBACK);
     setSort(q.trim() ? "relevance" : "name");
   };
-  const subtitle = sort === "zone" ? "By hardiness zone, hardiest first" : sort === "name" || !query ? "A to Z by common name" : `Best matches for “${query}”`;
+  const mark = (id, v) => setMarks((m) => ({ ...m, [id]: m[id] === v ? 0 : v }));
+  const marked = (v) => Object.keys(marks).filter((id) => marks[id] === v).sort();
+  const relevant = marked(1), rejected = marked(-1);
+  const pending = relevant.join() !== applied.relevant.join() || rejected.join() !== applied.rejected.join();
+  const canRank = Boolean(query) || applied.relevant.length > 0;
+  const applyFeedback = () => {
+    setApplied({ relevant, rejected });
+    if (relevant.length) setSort("relevance");
+    else if (!query && sort === "relevance") setSort("name");
+    window.scrollTo({ top: 0 });
+  };
+  const resetFeedback = () => {
+    setMarks({}); setApplied(NO_FEEDBACK);
+    if (!query && sort === "relevance") setSort("name");
+  };
+  const first = data.facets === null; // no search has answered yet
+  const subtitle = sort === "zone" ? "By hardiness zone, hardiest first"
+    : sort === "name" || !canRank ? "A to Z by common name"
+    : !applied.relevant.length ? `Best matches for “${query}”`
+    : `${query ? `Best matches for “${query}”, adjusted` : "Ranked"} using ${applied.relevant.length} plant${applied.relevant.length > 1 ? "s" : ""} you marked`;
 
   return (
     <>
@@ -280,17 +355,18 @@ export default function App() {
       </section>
       <div className="layout">
         <Sidebar facets={data.facets} filters={filters} setFilters={setFilters} />
-        <main className="results">
+        <main className="results" ref={resultsTop}>
           <div className="res-head">
             <div>
-              <h2>{error ? "Search unavailable" : `${data.total} plants`}</h2>
-              <p className="sub">{loading ? "Searching…" : error ? "" : subtitle}</p>
+              <h2>{error ? "Search unavailable" : first ? "Loading plants…" : `${data.total} plants`}</h2>
+              <p className="sub">{first || error ? "" : loading ? "Searching…" : subtitle}</p>
+              {!error && data.expansion?.length > 0 && <p className="sub">Also looking for: {data.expansion.join(", ")}</p>}
             </div>
             <div className="controls">
               <span className="muted">Sort</span>
               <div className="select sm">
                 <select value={sort} onChange={(e) => setSort(e.target.value)}>
-                  <option value="relevance" disabled={!query}>Relevance{query ? "" : " (search first)"}</option>
+                  <option value="relevance" disabled={!canRank}>Relevance{canRank ? "" : " (search first)"}</option>
                   <option value="name">Name (A–Z)</option>
                   <option value="zone">Hardiness zone</option>
                 </select>
@@ -306,17 +382,29 @@ export default function App() {
             <div className="empty" role="alert">
               The search service didn’t respond properly. <button className="link" onClick={() => setRetry((n) => n + 1)}>Try again</button>
             </div>
-          ) : data.total === 0 && !loading ? (
+          ) : first ? null : data.total === 0 && !loading ? (
             <div className="empty">No plants match. Try removing a filter or using a broader term.</div>
-          ) : view === "list" ? (
-            <ResultsTable results={data.results} feedback={feedback} setFeedback={setFeedback} />
           ) : (
-            <ResultsGrid results={data.results} />
+            <>
+              {view === "list" ? (
+                <ResultsTable results={data.results} offset={(data.page - 1) * data.page_size} marks={marks} mark={mark} />
+              ) : (
+                <ResultsGrid results={data.results} marks={marks} mark={mark} />
+              )}
+              <Pager page={data.page} pageSize={data.page_size} total={data.total} goTo={goTo} />
+            </>
           )}
         </main>
       </div>
 
       <footer className="footer">
+        {(relevant.length > 0 || rejected.length > 0 || pending) && (
+          <div className="fb-bar">
+            <span role="status">{relevant.length} relevant, {rejected.length} not relevant</span>
+            <button className="fb-update" disabled={!pending} onClick={applyFeedback}>Update results</button>
+            <button className="link" onClick={resetFeedback}>Reset feedback</button>
+          </div>
+        )}
         <button className="link" aria-haspopup="dialog" onClick={() => about.current.showModal()}>About the data</button>
       </footer>
       <AboutDialog dialogRef={about} stats={stats} />

@@ -5,10 +5,10 @@ Sources:
   ncsu NC State Extension Plant Toolbox          (sitemap.xml)
   wf   Lady Bird Johnson Wildflower Center       (search by plant family)
 
-Usage: python crawler/crawl.py [--per-source 200] [--delay 1.0] [--only mbg,ncsu,wf]
+Usage: python crawler/crawl.py [--per-source 500] [--delay 1.0] [--only mbg,ncsu,wf]
 Raw HTML is cached in data/raw/ so re-runs don't re-download.
 """
-import argparse, hashlib, json, re, sys, time
+import argparse, hashlib, json, random, re, sys, time
 import urllib.robotparser
 from pathlib import Path
 from urllib.parse import urlparse
@@ -80,20 +80,27 @@ def clean(s):
     return re.sub(r"\s+", " ", s or "").strip()
 
 
+def spread(urls):
+    """All candidate pages in a fixed random order: the crawl stops after --per-source records, so any prefix
+    must be a sample of the whole site rather than its first letters. The fixed seed keeps rebuilds offline."""
+    urls = list(dict.fromkeys(urls))
+    random.Random(13).shuffle(urls)
+    return urls
+
+
 # ---------------- Missouri Botanical Garden ----------------
 MBG = "https://plantfinder.mobot.org/"
 
 
 def mbg_urls():
-    for letter in "ABCDEFGHIJKLMNOPRSTVWYZ":
+    urls = []
+    for letter in "ABCDEFGHIJKLMNOPQRSTUVWXYZ":
         html = fetch(f"{MBG}PlantFinderListResults.aspx?letter={letter}")
-        if not html:
-            continue
-        ids = list(dict.fromkeys(re.findall(r"PlantFinderDetails\.aspx\?taxonid=(\d+)", html)))
-        # take a spread across the list rather than only the first entries
-        step = max(1, len(ids) // 25)
-        for i in ids[::step]:
-            yield f"{MBG}PlantFinderDetails.aspx?taxonid={i}"
+        if html:
+            urls += [f"{MBG}PlantFinderDetails.aspx?taxonid={i}"
+                     for i in re.findall(r"PlantFinderDetails\.aspx\?taxonid=(\d+)", html)]
+    print(f"  {len(set(urls))} candidate pages")
+    return spread(urls)
 
 
 def mbg_parse(url, html):
@@ -141,12 +148,12 @@ NCSU = "https://plants.ces.ncsu.edu/"
 def ncsu_urls():
     xml = fetch(NCSU + "sitemap.xml")
     if not xml:
-        return
+        return []
     urls = re.findall(r"<loc>(https://plants\.ces\.ncsu\.edu/plants/[^<]+)</loc>", xml)
-    # species pages only (cultivar slugs usually contain a quoted name -> longer); spread through alphabet
+    # species pages only (cultivar slugs usually contain a quoted name -> longer)
     urls = [u for u in urls if u.rstrip("/").count("-") <= 2]
-    step = max(1, len(urls) // 1500)
-    yield from urls[::step]
+    print(f"  {len(set(urls))} candidate pages")
+    return spread(urls)
 
 
 def ncsu_parse(url, html):
@@ -163,9 +170,14 @@ def ncsu_parse(url, html):
             dl[k] = ", ".join(values)
     if "Flower Color" not in dl:
         return None  # not a flowering plant entry
-    sci = clean(s.h1.get_text(" ")).replace("Play pronunciation", "").strip() if s.h1 else ""
+    h1 = s.h1
+    em = h1.find("em") if h1 else None  # the scientific name; the rest of the <small> is the audio player
+    sci = clean(em.get_text(" ")) if em else clean(h1.get_text(" ")).replace("Play pronunciation", "").strip() if h1 else ""
+    # alias pages (/plants/<species>/common-name/<alias>/) put the alias in front of the scientific name:
+    # it is the name the page is about, unless it just repeats the scientific name
+    alias = clean(" ".join(h1.find_all(string=True, recursive=False))) if h1 else ""
     first = s.select_one("#common_names li")
-    common = clean(first.get_text(" ")) if first else ""
+    common = alias if alias and alias.lower() != sci.lower() else clean(first.get_text(" ")) if first else ""
     # first full-size plant photo (thumb_sm ones are "related plants"); drop the expiring S3 signature
     # (must be an <img> with an image extension: the pronunciation audio lives under media/images/audio/,
     # and partner logos sit among the photos under media/images/partner_logos/)
@@ -193,12 +205,24 @@ WF_FAMILIES = ["Asteraceae", "Lamiaceae", "Iridaceae", "Liliaceae", "Ranunculace
 
 
 def wf_urls():
+    urls = []
     for fam in WF_FAMILIES:
-        html = fetch(f"{WF}search.php?search_field=&newsearch=true&family={fam}&pagecount=30")
-        if not html:
-            continue
-        for sym in dict.fromkeys(re.findall(r"result\.php\?id_plant=([A-Z0-9]+)", html)):
-            yield f"{WF}result.php?id_plant={sym}"
+        start = 0
+        while True:  # result pages of 30 plants, in alphabetical order
+            url = f"{WF}search.php?search_field=&newsearch=true&family={fam}&pagecount=30"
+            html = fetch(url + (f"&start={start}" if start else ""))
+            if not html:
+                break
+            ids = re.findall(r"result\.php\?id_plant=([A-Z0-9]+)", html)
+            new = [f"{WF}result.php?id_plant={i}" for i in dict.fromkeys(ids)]
+            if not set(new) - set(urls):
+                break
+            urls += new
+            if f"start={start + 30}&" not in html:
+                break
+            start += 30
+    print(f"  {len(set(urls))} candidate pages")
+    return spread(urls)
 
 
 WF_LABEL = re.compile(r"^[A-Z][A-Za-z0-9 /()'-]{1,40}:$")
@@ -263,7 +287,7 @@ SOURCES = {"mbg": (mbg_urls, mbg_parse), "ncsu": (ncsu_urls, ncsu_parse), "wf": 
 def main():
     global DELAY
     ap = argparse.ArgumentParser()
-    ap.add_argument("--per-source", type=int, default=200)
+    ap.add_argument("--per-source", type=int, default=500)
     ap.add_argument("--delay", type=float, default=1.0)
     ap.add_argument("--only", default="mbg,ncsu,wf")
     a = ap.parse_args()

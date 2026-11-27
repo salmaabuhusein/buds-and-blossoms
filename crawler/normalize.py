@@ -31,12 +31,13 @@ TYPES = [  # (label, keywords) — first match wins
     ("Succulent", ["succulent", "cactus", "cacti"]),
     ("Bulb", ["bulb", "corm", "tuber"]),
     ("Vine", ["vine", "climber", "climbing"]),
-    ("Tree", ["tree"]),
-    ("Shrub", ["shrub", "subshrub", "broadleaf evergreen", "needled evergreen"]),
+    ("Tree", ["tree", "palm", "cycad"]),
+    ("Shrub", ["shrub", "subshrub", "broadleaf evergreen", "needled evergreen", "rose"]),
     ("Grass", ["grass", "sedge", "rush"]),
     ("Fern", ["fern"]),
     ("Annual", ["annual", "biennial"]),
     ("Herbaceous perennial", ["perennial", "herb", "herbaceous", "forb", "wildflower"]),
+    ("Fruit", ["fruit"]),  # Missouri's type for fruit crops; last, so it only catches records with no other type
 ]
 
 
